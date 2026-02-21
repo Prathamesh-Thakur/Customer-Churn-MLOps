@@ -1,0 +1,104 @@
+# ==========================================
+# 1. COMMON SETTINGS FOR AIRFLOW CONTAINERS
+# ==========================================
+x-airflow-common:
+  &airflow-common
+  image: apache/airflow:2.7.2-python3.9
+  environment:
+    &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false' # Turn off default clutter
+    # Tell Airflow where to find your Python code
+    PYTHONPATH: "/opt/airflow"
+    _PIP_ADDITIONAL_REQUIREMENTS: "joblib pandas scikit-learn"
+    AIRFLOW__WEBSERVER__SECRET_KEY: "my_super_secret_telco_key_12345"
+  volumes:
+    # This is the magic! It connects your local folders to the Airflow container
+    - ./airflow/dags:/opt/airflow/dags
+    - ./src:/opt/airflow/src
+    - ./models:/opt/airflow/models
+    - ./data:/opt/airflow/data
+  depends_on:
+    &airflow-common-depends-on
+    postgres:
+      condition: service_healthy
+
+services:
+  # ==========================================
+  # 2. THE DATABASE (Postgres)
+  # ==========================================
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 5
+
+  # ==========================================
+  # 3. INITIALIZER (Creates the admin user)
+  # ==========================================
+  airflow-init:
+    <<: *airflow-common
+    command: version
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_UPGRADE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: airflow
+      _AIRFLOW_WWW_USER_PASSWORD: airflow
+
+  # ==========================================
+  # 4. THE WEB UI
+  # ==========================================
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  # ==========================================
+  # 5. THE SCHEDULER (Runs the tasks)
+  # ==========================================
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+  
+  # ==========================================
+  # 6. FASTAPI PREDICTION SERVER
+  # ==========================================
+  fastapi:
+    build: .  # This tells Compose to use your existing Dockerfile!
+    image: customer-churn-mlops-web:latest
+    command: uvicorn api.app:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    volumes:
+      # This is the magic! Both containers now share these folders.
+      - ./data:/app/data
+      - ./models:/app/models
+  
+  # ==========================================
+  # 7. STREAMLIT UI
+  # ==========================================
+  streamlit:
+    image: customer-churn-mlops-web:latest
+    command: streamlit run ui/app.py --server.port=8501 --server.address=0.0.0.0
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./ui:/app/ui
+    depends_on:
+      - fastapi
