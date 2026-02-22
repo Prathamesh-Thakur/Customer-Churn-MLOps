@@ -81,49 +81,29 @@ Customer-Churn-MLOps/
 │                        (Docker Compose Network)                         │
 └─────────────────────────────────────────────────────────────────────────┘
 
-                                ┌──────────────────────┐
-                                │  📅 ORCHESTRATION    │
-                                │  Apache Airflow      │
-                                │  (Port 8080)         │
-                                │                      │
-                                │  • Nightly Cron      │
-                                │  • DAG Management    │
-                                └──────┬───────────────┘
-                                       │
-                                       ▼
-┌──────────────────┐  Trigger   ┌─────────────────────┐
-│ 🏋️ TRAINING      │◄───────────┤ 📊 MONITORING       │
-│ train.py         │ (If Drift) │ monitor.py          │
-│                  │            │                     │
-│ • Align Schema   │            │ • PSI Drift Score   │
-│ • Train RF Model │            │ • Covariate Shift   │
-│ • Save Artifacts │            │ • Read Live Data    │
-└────────┬─────────┘            └─────────▲───────────┘
-         │                                │
-         │   ┌──────────────────────┐     │ Reads Logs
-         ├──►│  📦 MODEL ARTIFACTS  │     │ for Drift
-         │   │  model.joblib        │     │
-         │   │  features.txt        │     │
-         │   └──────────┬───────────┘     │
-         │              │                 │
-         │ HTTP POST    │ Loads           │
-         │ /reload      ▼                 │
-         │   ┌──────────────┐       ┌─────┴───────────┐
-         └──►│  📡 API      │◄──────┤  🎨 UI          │
-             │  FastAPI     │ JSON  │  Streamlit      │
-             │  (Port 8000) │       │  (Port 8501)    │
-             │              │       │                 │
-             │ • Inference  │       │ • Web Form      │
-             │ • Pydantic   │       │ • Visuals       │
-             └──────┬───────┘       └─────────────────┘
-                    │
-                    │ Appends Data
-                    ▼
-             ┌─────────────────┐
-             │  📊 DATA LOGS   │
-             │ live_inference_ │
-             │  logs.csv       │
-             └─────────────────┘
+┌──────────────┐          JSON         ┌──────────────┐
+│  🎨 UI       │◄─────────────────────►│  📡 API      │◄─────────┐
+│  Streamlit   │    Prediction &       │  FastAPI     │          │
+│  (Port 8501) │    Customer Data      │  (Port 8000) │          │
+└──────────────┘                       └──────┬───────┘          │
+                                              │                  │
+┌────────────────┐               Appends Data │                  │
+│ 📅 ORCHESTRATOR│                            ▼                  │
+│ Apache Airflow │ ┌──────────────────┐    ┌─────────────────┐   │
+│ (Port 8080)    │ │ 📊 MONITORING    │◄───┤  📊 DATA LOGS   │   │ HTTP POST
+│                ├►│ monitor.py       │    │ live_inference_ │   │ /reload
+│ • DAG triggers │ │                  │    │  logs.csv       │   │
+└───────┬────────┘ └────────┬─────────┘    └─────────────────┘   │
+        │                   │                                    │
+        │                   │ If drift > 0.2                     │
+        │                   ▼                                    │
+        │          ┌──────────────────┐    ┌───────────────────┐ │
+        │          │ 🏋️ TRAINING      │    │ 📦 MODEL ARTIFACTS│ │
+        └─────────►│ train.py         ├───►│ model.joblib      ├─┤ Loads
+                   │                  │Save│ features.txt      │ │
+                   └────────┬─────────┘    └───────────────────┘ │
+                            │                                    │
+                            └────────────────────────────────────┘
 ```
 
 ### System Components
