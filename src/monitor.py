@@ -11,90 +11,109 @@ current_dir = Path(__file__).resolve().parent
 models_dir = current_dir.parent / "models"
 data_dir = current_dir.parent / "data" / "batches"
 
-# 3. Create the full, absolute path to the files
+# Create the full, absolute path to the files
 feature_file_path = models_dir / "imp_features.txt"
 model_file_path = models_dir / "training_model.joblib"
 encoder_file_path = models_dir / "encoder.joblib"
 val_probs_path = models_dir / "validation_probabilities.npy"
 psi_scores_path = models_dir / "PSI_scores.txt"
 
+# Data files
 training_data_path = data_dir / "batch_0_training.csv"
-prod_data_path = data_dir / "batch_1_production.csv"
+# Use this path and disable checking if you just want to check out the working of the DAG
+# prod_data_path = data_dir / "batch_1_production.csv"
+
+# Points to the file generated through live input
+prod_data_path = data_dir / "live_inference_logs.csv"
 
 def calc_psi_score(expected, actual, col_type = "numeric"):
+  """Function to calculate the Population Stability Index"""
+  # Empty series objects
   train_val_counts = pd.Series()
   prod_val_counts = pd.Series()
 
-  if col_type not in ['object', 'category']:
-    if expected.nunique() > 20:
-      out, training_bins = pd.qcut(expected, 10, duplicates = 'drop', retbins = True)
+  if col_type not in ['object', 'category']: # If column type is numeric
+    if expected.nunique() > 20: # Check if the column is continuous or discrete encoded
+      out, training_bins = pd.qcut(expected, 10, duplicates = 'drop', retbins = True) # Bin the data
 
-      cleaned_bins = np.round(training_bins, 3)
+      cleaned_bins = np.round(training_bins, 3) # Round the bin interval limits for cleanliness
 
+      # Add -inf and inf as extremes so that outliers are added to a bin
       cleaned_bins[0] = -np.inf
       cleaned_bins[-1] = np.inf
 
-      expected = pd.cut(expected, cleaned_bins)
+      expected = pd.cut(expected, cleaned_bins) # Bin the training data column
 
-      actual = pd.cut(actual, cleaned_bins)
+      actual = pd.cut(actual, cleaned_bins) # Bin the production data column
 
+  # Counts of every unique bin interval
   train_val_counts = expected.value_counts(normalize = True, dropna = False)
   prod_val_counts = actual.value_counts(normalize = True, dropna = False)
 
+  # Convert index to string 
   train_val_counts.index = train_val_counts.index.astype(str)
   prod_val_counts.index = prod_val_counts.index.astype(str)
 
+  # Get all features if some are missed
   all_categories = list(set(train_val_counts.index) | set(prod_val_counts.index))
 
+  # Align both indexes
   train_val_counts = train_val_counts.reindex(all_categories, fill_value = 0)
   prod_val_counts = prod_val_counts.reindex(all_categories, fill_value = 0)
 
+  # Renormalize the value counts
   prod_val_counts = prod_val_counts / prod_val_counts.sum()
 
-  epsilon = 1e-4
+  epsilon = 1e-4 # Small value to avoid division by zero error
 
   train_val_counts = train_val_counts + epsilon
   prod_val_counts = prod_val_counts + epsilon
 
+  # Calculate the psi score
   psi_values = (prod_val_counts - train_val_counts) * np.log(prod_val_counts / train_val_counts)
   psi_total = psi_values.sum()
 
   return round(psi_total, 4)
 
-
-# def generate_alert(psi_score, name):
-#     """Helper function to print/log the Green/Yellow/Red status"""
-    # if psi_score < 0.1:
-    #     print(f"[{name}] GREEN - PSI: {psi_score:.4f}")
-    # elif 0.1 <= psi_score < 0.2:
-    #     print(f"[{name}] YELLOW - PSI: {psi_score:.4f}")
-    # else:
-    #     print(f"[{name}] RED - PSI: {psi_score:.4f} (DRIFT DETECTED!)")
-
-
 def prod_data_probs(prod_X):
+  """Function to encode the production data"""
+  # Load the model and encoder
   training_model = joblib.load(model_file_path)
-
   encoder = joblib.load(encoder_file_path)
 
+  # Get the categorical columns and encode them
   cat_cols = prod_X.select_dtypes(include=['object', 'category']).columns
-
   prod_X[cat_cols] = encoder.transform(prod_X[cat_cols])
 
+  # Calculate the expected probabilities for the production data
   prod_probs = training_model.predict_proba(prod_X)[:, 1]
 
   return prod_probs
 
 
 def run_drift_report():
+  """Generate the drift report"""
   important_features = None
 
+  # Get the important features
   with open(feature_file_path, "r") as f:
     important_features = f.read().splitlines()
    
+  # Load the training and production data
   df_training = pd.read_csv(training_data_path)
+  
+  # Safely load the live logs
+  try:
+      df_prod = pd.read_csv(prod_data_path)
+  except FileNotFoundError:
+      print("No live inference logs found yet. Skipping drift detection.")
+      return False
 
-  df_prod = pd.read_csv(prod_data_path)
+  # Check for minimum sample size (e.g., at least 50 predictions)
+  min_samples_for_psi = 50
+  if len(df_prod) < min_samples_for_psi:
+    print(f"Only {len(df_prod)} live predictions logged. Waiting for at least {min_samples_for_psi} to calculate statistically significant PSI.")
+    return False
 
   psi_scores = ""
 
@@ -103,8 +122,10 @@ def run_drift_report():
 
   drift_detected = False
 
+  # Check for all important feature columns
   for col in important_features:
     psi_score = calc_psi_score(df_training[col], df_prod[col], df_prod[col].dtype)
+    # Based on threshold, save the outcome in the report
     if psi_score < 0.1:
       psi_scores += f"[{col}] GREEN - PSI: {psi_score:.4f}\n"
     elif 0.1 <= psi_score < 0.2:
@@ -129,6 +150,7 @@ def run_drift_report():
   else:
     psi_scores += f"[Probability] GREEN - PSI: {psi_score:.4f}\n\n"
   
+  # Write the report
   with open(psi_scores_path, "a") as f:
       f.write(psi_scores)
   

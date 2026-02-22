@@ -92,8 +92,3 @@ def permutation_importance(df, target_column):
   # Save important features
   with open(feature_file_path, "w") as f:
     f.write("\n".join(col_names))
-
-if __name__ == "__main__":
-  training_df = pd.read_csv(training_data_path)
-  target_col = training_df.columns[-1]
-  permutation_importance(training_df, target_col)

@@ -1,3 +1,4 @@
+# Library imports
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import pandas as pd
@@ -6,13 +7,16 @@ from datetime import datetime, UTC
 import csv
 import joblib
 
+# Inference function
 from src.predict import make_prediction
 
+# Path resolution for accessing local files
 BASE_DIR = Path(__file__).resolve().parent.parent
 LOG_FILE = BASE_DIR / "data" / "live_inference_logs.csv"
 MODEL_PATH = BASE_DIR / "models" / "training_model.joblib"
 feature_file_path = BASE_DIR / "models" / "imp_features.txt"
 
+# Main app
 app = FastAPI(
     title="Telco Churn Prediction API", 
     description="An API that predicts the probability of a customer churning.",
@@ -29,7 +33,7 @@ class CustomerData(BaseModel):
     PaymentMethod: str
 
 
-# 2. Create a helper function to write to the CSV
+# Helper function to write to the CSV
 def log_prediction(input_data: dict, prediction: int):
     """Saves the user input, timestamp, and model prediction to a CSV file."""
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -59,6 +63,7 @@ def health_check():
 # Prediction endpoint
 @app.post("/predict")
 def predict_churn(customer: CustomerData):
+    """Function to predict if the new customer will churn based on attributes."""
     try:
         important_features = None
         customer_dict = customer.model_dump()
@@ -103,11 +108,9 @@ def reload_model():
     
     try:
         # Re-load the model from the same path you defined at the top of your file
-        # (Make sure MODEL_PATH matches whatever variable name you used earlier!)
         model = joblib.load(MODEL_PATH) 
-        
-        # In a real system, you might also reload the 'imp_features.txt' here 
-        # if your training script changes the feature columns!
+
+        # Can also reload important features if changed.
         
         return {"status": "success", "message": "Latest model loaded into memory!"}
         

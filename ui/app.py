@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 
 # Set page config
-st.set_page_config(page_title="Telco Churn AI", page_icon="📡", layout="centered")
+st.set_page_config(page_title="Customer Churn AI", page_icon="📡", layout="centered")
 
 st.title("📡 Autonomous Churn Predictor")
 st.markdown("Enter customer details below. The backend AI will dynamically filter for the features it currently deems most important.")
@@ -20,7 +20,7 @@ with col2:
     internet_service = st.selectbox("Internet Service", ["DSL", "Fiber optic", "No"])
     payment_method = st.selectbox("Payment Method", ["Electronic check", "Mailed check", "Bank transfer (automatic)", "Credit card (automatic)"])
 
-# 2. Pack the data into a dictionary (matching your original dataset column names exactly!)
+# 2. Pack the data into a dictionary
 customer_data = {
     "tenure": tenure,
     "MonthlyCharges": monthly_charges,
@@ -37,17 +37,19 @@ st.divider()
 if st.button("Predict Churn Risk", type="primary", use_container_width=True):
     with st.spinner("Analyzing profile against latest ML model..."):
         try:
-            # Notice we use the Docker service name 'fastapi' and port '8000'
+            # We use the Docker service name 'fastapi' and port '8000'
             # (If running outside Docker for testing, change to http://localhost:8000/predict)
             response = requests.post("http://fastapi:8000/predict", json = customer_data)
             response.raise_for_status()
             
+            # Grab the prediction probability and the response
             prediction = response.json().get("churn_prediction_default")
             prediction_prob = response.json().get("churn_probability")
 
             st.metric(label="Churn Probability", value=f"{prediction_prob * 100:.1f}%")
             st.progress(float(prediction_prob))
             
+            # Decision
             if prediction == 1:
                 st.error("🚨 HIGH RISK: This customer is likely to churn.")
             else:

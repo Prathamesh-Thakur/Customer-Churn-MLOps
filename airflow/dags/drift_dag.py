@@ -1,3 +1,4 @@
+# Library imports
 from airflow import DAG
 from airflow.operators.python import PythonOperator, BranchPythonOperator
 from airflow.operators.empty import EmptyOperator
@@ -32,6 +33,7 @@ with DAG(
     def start_pipeline():
         print("Starting the Daily Drift Monitor Pipeline...")
 
+    # Task to be used in the graph
     task_start = PythonOperator(
         task_id="start_pipeline",
         python_callable=start_pipeline,
@@ -39,13 +41,13 @@ with DAG(
 
     # Task 2: The actual Machine Learning Monitor
     def run_monitor(**kwargs):
-        # Replace this path with wherever your data_gen.py saves the daily files
-        # data_path = "/opt/airflow/data/batches/batch_1_production.csv"
+        # Get whether there is any kind of drift in the data
         drift_score_bool = run_drift_report()
         
         # Push the score to XCom (Airflow's memory bank) so the next task can read it
         kwargs['ti'].xcom_push(key='drift_score_bool', value = drift_score_bool)
 
+    # Task to be used in the graph
     task_monitor = PythonOperator(
         task_id="run_psi_drift_check",
         python_callable=run_monitor,
@@ -63,6 +65,7 @@ with DAG(
             print("Drift is LOW. Skipping retraining.")
             return "skip_retraining" # Returns the exact task_id to run next
 
+    # Task to be used in the graph
     task_branch = BranchPythonOperator(
         task_id="check_drift_threshold",
         python_callable=decide_whether_to_retrain,
@@ -70,21 +73,25 @@ with DAG(
 
     # TASK 3a: The Retraining Path
     def trigger_training():
+        # Pass the target column while training
         training("Churn") 
         
         print("Training complete. New model saved to /models directory.")
 
+    # Task to be used in the graph
     task_retrain = PythonOperator(
         task_id="retrain_model",
         python_callable=trigger_training,
     )
 
+    # Function to tell FastAPI to grab the reloaded model
     def reload_fastapi():
         print("Notifying FastAPI to drop the old model and load the new one...")
         
-        # Notice we use 'fastapi' instead of 'localhost'!
+        # Use localhost instead of fastapi if running without Docker
         url = "http://fastapi:8000/reload-model"
         
+        # Try the backend
         try:
             response = requests.post(url)
             response.raise_for_status() # Raises an error if the request fails
@@ -93,6 +100,7 @@ with DAG(
             print(f"Failed to contact FastAPI: {e}")
             raise # Fail the Airflow task so we get an alert
 
+    # Task to be used in the graph
     task_reload_api = PythonOperator(
         task_id="reload_fastapi",
         python_callable=reload_fastapi,
