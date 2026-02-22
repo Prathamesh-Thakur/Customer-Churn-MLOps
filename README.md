@@ -77,66 +77,53 @@ Customer-Churn-MLOps/
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                        CUSTOMER CHURN MLOPS PLATFORM                     │
+│                       CUSTOMER CHURN MLOPS PLATFORM                     │
+│                        (Docker Compose Network)                         │
 └─────────────────────────────────────────────────────────────────────────┘
 
-┌──────────────────────┐
-│  📅 ORCHESTRATION    │
-│  Apache Airflow      │
-│  (Port 8080)         │
-│                      │
-│  • Daily Pipeline    │
-│  • Drift Detection   │
-│  • Auto-Retraining   │
-└──────┬───────────────┘
-       │
-       ├─────────────────────────────────────────────────────────┐
-       │                                                         │
-       ▼                                                         ▼
-┌──────────────────┐                              ┌─────────────────────┐
-│ 🏋️ TRAINING      │                              │ 📊 MONITORING      │
-│ train.py         │                              │ monitor.py          │
-│                  │                              │                     │
-│ • Load Features  │                              │ • PSI Drift Score   │
-│ • Train RF Model │                              │ • Data Distribution │
-│ • Metrics        │                              │ • Retraining Flag   │
-└────────┬─────────┘                              └─────────────────────┘
-         │
-         └──────────────────────────────────────┬─────────────────────┐
-                                                │                     │
-         ┌──────────────────────────────────────┘                     │
-         │                                                             │
-         ▼                                                             ▼
-    ┌────────────────────────────────────────────────────────────────────┐
-    │                    📦 MODEL ARTIFACTS                              │
-    │  training_model.joblib | encoder.joblib | imp_features.txt        │
-    └────────────────────────────────────────────────────────────────────┘
-                                   │
-                ┌──────────────────┼──────────────────┐
-                │                  │                  │
-                ▼                  ▼                  ▼
-         ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-         │  📡 API      │  │  🎨 UI       │  │  🗄️ DB      │
-         │  FastAPI     │  │  Streamlit   │  │  PostgreSQL  │
-         │  (Port 8000) │  │  (Port 8501) │  │              │
-         │              │  │              │  │              │
-         │ • REST Calls │  │ • Web Form   │  │ • Logs       │
-         │ • Predictions│  │ • Visualization                │
-         │ • Logging    │  │              │  │ • Airflow    │
-         └──────────────┘  └──────────────┘  └──────────────┘
-                │                 │                  │
-                └─────────────────┴──────────────────┘
-                           │
-                           ▼
-                    ┌─────────────────┐
-                    │  📊 DATA LOGS   │
-                    │ live_inference_ │
-                    │   logs.csv      │
-                    │                 │
-                    │ • Predictions   │
-                    │ • Ground Truth  │
-                    │ • Timestamps    │
-                    └─────────────────┘
+                                ┌──────────────────────┐
+                                │  📅 ORCHESTRATION    │
+                                │  Apache Airflow      │
+                                │  (Port 8080)         │
+                                │                      │
+                                │  • Nightly Cron      │
+                                │  • DAG Management    │
+                                └──────┬───────────────┘
+                                       │
+                                       ▼
+┌──────────────────┐  Trigger   ┌─────────────────────┐
+│ 🏋️ TRAINING      │◄───────────┤ 📊 MONITORING       │
+│ train.py         │ (If Drift) │ monitor.py          │
+│                  │            │                     │
+│ • Align Schema   │            │ • PSI Drift Score   │
+│ • Train RF Model │            │ • Covariate Shift   │
+│ • Save Artifacts │            │ • Read Live Data    │
+└────────┬─────────┘            └─────────▲───────────┘
+         │                                │
+         │   ┌──────────────────────┐     │ Reads Logs
+         ├──►│  📦 MODEL ARTIFACTS  │     │ for Drift
+         │   │  model.joblib        │     │
+         │   │  features.txt        │     │
+         │   └──────────┬───────────┘     │
+         │              │                 │
+         │ HTTP POST    │ Loads           │
+         │ /reload      ▼                 │
+         │   ┌──────────────┐       ┌─────┴───────────┐
+         └──►│  📡 API      │◄──────┤  🎨 UI          │
+             │  FastAPI     │ JSON  │  Streamlit      │
+             │  (Port 8000) │       │  (Port 8501)    │
+             │              │       │                 │
+             │ • Inference  │       │ • Web Form      │
+             │ • Pydantic   │       │ • Visuals       │
+             └──────┬───────┘       └─────────────────┘
+                    │
+                    │ Appends Data
+                    ▼
+             ┌─────────────────┐
+             │  📊 DATA LOGS   │
+             │ live_inference_ │
+             │  logs.csv       │
+             └─────────────────┘
 ```
 
 ### System Components
