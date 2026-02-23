@@ -38,6 +38,8 @@ services:
       test: ["CMD", "pg_isready", "-U", "airflow"]
       interval: 5s
       retries: 5
+    networks:
+      - ml_net
 
   # ==========================================
   # 3. INITIALIZER (Creates the admin user)
@@ -51,6 +53,8 @@ services:
       _AIRFLOW_WWW_USER_CREATE: 'true'
       _AIRFLOW_WWW_USER_USERNAME: airflow
       _AIRFLOW_WWW_USER_PASSWORD: airflow
+    networks:
+      - ml_net
 
   # ==========================================
   # 4. THE WEB UI
@@ -64,6 +68,8 @@ services:
       <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
+    networks:
+    - ml_net
 
   # ==========================================
   # 5. THE SCHEDULER (Runs the tasks)
@@ -75,6 +81,8 @@ services:
       <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
+    networks:
+      - ml_net
   
   # ==========================================
   # 6. FASTAPI PREDICTION SERVER
@@ -89,6 +97,9 @@ services:
       # This is the magic! Both containers now share these folders.
       - ./data:/app/data
       - ./models:/app/models
+    networks:
+      - serving_net
+      - ml_net
   
   # ==========================================
   # 7. STREAMLIT UI
@@ -102,3 +113,11 @@ services:
       - ./ui:/app/ui
     depends_on:
       - fastapi
+    networks:
+      - serving_net
+  
+networks:
+  serving_net:
+    driver: bridge
+  ml_net:
+    driver: bridge
