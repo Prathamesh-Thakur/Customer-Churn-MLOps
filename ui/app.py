@@ -50,7 +50,7 @@ if st.button("Predict Churn Risk", type="primary", use_container_width=True):
             st.progress(float(prediction_prob))
             
             # Decision
-            if prediction == 1:
+            if prediction == "Yes":
                 st.error("🚨 HIGH RISK: This customer is likely to churn.")
             else:
                 st.success("✅ LOW RISK: This customer is stable.")
